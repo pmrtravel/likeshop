@@ -1,2 +1,2 @@
-// 部署 Apps Script 後，把 Web App 網址貼在這裡
-window.API_URL = 'https://script.google.com/macros/s/請換成你的部署ID/exec';
+// Apps Script Web App 網址
+window.API_URL = 'https://script.google.com/macros/s/AKfycbzirhWifxSKPXrrFUP1Um8XA4FdXuZ2b91dpyifcbv0m-pZIW7OScg5gSQUhz1t4i9xhg/exec';
