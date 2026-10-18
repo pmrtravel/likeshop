@@ -18,8 +18,8 @@
   <div class="steps">
     <div><b>1. 選服務</b>挑選項目與數量</div>
     <div><b>2. 貼網址</b>貼文或個人頁連結</div>
-    <div><b>3. 匯款</b>回報帳號末五碼</div>
-    <div><b>4. 開始充電</b>確認款項後自動送出</div>
+    <div><b>3. 匯款</b>匯入指定金額</div>
+    <div><b>4. 自動充電</b>收到款項自動開始</div>
   </div>
 
   <section>
@@ -56,9 +56,12 @@
     <div class="oid" id="payOid"></div>
     <p id="paySummary"></p>
     <div class="bank" id="bankInfo"></div>
-    <label for="last5">匯款完成後，輸入你的帳號末五碼</label>
+    <p class="hint" style="color:var(--ink)">⚡ 請匯<b>完全相同的金額</b>（含識別尾數），系統收到款項後會<b>自動開始充電</b>，不用另外回報。</p>
+    <details style="border:0;padding:0"><summary class="hint">匯款超過 30 分鐘還沒開始？點這裡回報末五碼</summary>
+    <label for="last5">你的匯款帳號末五碼</label>
     <input id="last5" inputmode="numeric" maxlength="5" placeholder="12345">
-    <button class="btn" id="reportBtn">我已匯款</button>
+    <button class="btn ghost" id="reportBtn">回報匯款</button>
+    </details>
     <div class="msg" id="payMsg"></div>
   </section>
 
@@ -78,7 +81,7 @@
     <details><summary>需要提供帳號密碼嗎？</summary>
       <p>不需要，我們也不會向你索取。只要提供貼文或個人頁的網址，帳號必須是公開狀態。</p></details>
     <details><summary>付款後多久開始？</summary>
-      <p>我們會人工核對款項，確認後系統自動送出。核對時間通常在幾小時內，深夜匯款則在隔天處理。開始執行後，多數項目在數分鐘到 24 小時內完成，大量訂單會分批慢慢增加。</p></details>
+      <p>請匯入下單頁顯示的「完全相同金額」，系統收到款項後會自動開始，通常在幾分鐘內。若金額不符或系統無法辨識，會改由人工確認，可能需要幾小時。開始執行後，多數項目在數分鐘到 24 小時內完成，大量訂單會分批慢慢增加。</p></details>
     <details><summary>數量會掉嗎？</summary>
       <p>有可能。這類服務在完成後，數字可能因平台清理而減少。標示「含補單」的項目，在保固期內掉量可以申請補回；沒有標示的項目不提供補單。</p></details>
     <details><summary>會不會影響我的帳號？</summary>

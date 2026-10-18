@@ -11,6 +11,7 @@ const SH = {
   MAPPING: '對應',
   SERVICES: '上游服務',
   ORDERS: '訂單',
+  BANKLOG: '入帳紀錄',
 };
 
 const HEADERS = {
@@ -21,6 +22,7 @@ const HEADERS = {
   [SH.SERVICES]: ['上游', '服務ID', '名稱', '分類', '類型', '單價每千', '最少', '最多', '補單', '可取消'],
   [SH.ORDERS]: ['訂單編號', '建立時間', '姓名', '聯絡方式', '商品ID', '商品名稱', '連結', '數量', '應付金額',
     '狀態', '匯款末五碼', '回報時間', '上游', '上游訂單號', '成本TWD', '利潤', '上游狀態', '剩餘', '備註', '更新時間'],
+  [SH.BANKLOG]: ['收到時間', '通知內容', '金額', '對應訂單', '結果'],
 };
 
 const DEFAULT_SETTINGS = [
@@ -34,6 +36,8 @@ const DEFAULT_SETTINGS = [
   ['ADMIN_EMAIL', '', '有新訂單／客人回報匯款時寄信通知（可留空）'],
   ['BANK_INFO', '銀行：○○銀行(000)\n帳號：0000-0000-0000\n戶名：○○○', '匯款資訊，會顯示給客人'],
   ['LINE_OA_URL', 'https://line.me/R/ti/p/@your-id', 'LINE 官方帳號連結'],
+  ['NOTIFY_SECRET', Utilities.getUuid().slice(0, 12), '手機轉發入帳通知用的暗號（MacroDroid 要填一樣的）'],
+  ['AUTO_PLACE', true, '入帳金額對上唯一一筆訂單時，自動向上游下單（FALSE = 只標記已付款）'],
 ];
 
 const DEFAULT_PRODUCTS = [
@@ -282,9 +286,13 @@ function createOrder_(b) {
   const name = String(b.name || '').trim().slice(0, 50);
   const contact = String(b.contact || '').trim().slice(0, 80);
   if (!name || !contact) throw new Error('請填寫姓名與聯絡方式（LINE ID 或手機）');
-  const amount = priceFor_(p, qty);
-  if (amount < data.minOrder) throw new Error('最低訂單金額為 NT$' + data.minOrder + '，請增加數量');
+  const base = priceFor_(p, qty);
+  if (base < data.minOrder) throw new Error('最低訂單金額為 NT$' + data.minOrder + '，請增加數量');
 
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+  const amount = uniqueAmount_(base);
   const id = newOrderId_();
   const vals = {
     '訂單編號': id, '建立時間': now_(), '姓名': name, '聯絡方式': contact, '商品ID': p.id, '商品名稱': p.name,
@@ -293,7 +301,86 @@ function createOrder_(b) {
   const row = HEADERS[SH.ORDERS].map(h => (h in vals ? vals[h] : ''));
   sheet_(SH.ORDERS).appendRow(row);
   notify_('新訂單 ' + id, name + ' / ' + contact + '\n' + p.name + ' x ' + qty + '\nNT$' + amount + '\n' + link);
-  return { orderId: id, amount: amount, bankInfo: settings_().BANK_INFO, productName: p.name, quantity: qty };
+  return { orderId: id, amount: amount, base: base, bankInfo: settings_().BANK_INFO, productName: p.name, quantity: qty };
+  } finally { lock.releaseLock(); }
+}
+
+// ============ 自動對帳 ============
+const PENDING = ['待付款', '已回報匯款'];
+const MATCH_HOURS = 72;
+
+function toDate_(v) {
+  if (v instanceof Date) return v;
+  const m = String(v).match(/(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})/);
+  return m ? new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6] + '+08:00') : new Date(0);
+}
+
+function pendingOrders_() {
+  const since = Date.now() - MATCH_HOURS * 3600 * 1000;
+  return rows_(SH.ORDERS).filter(o => PENDING.indexOf(o['狀態']) >= 0 && toDate_(o['建立時間']).getTime() >= since);
+}
+
+/** 讓每筆待付款訂單金額都不同（必要時加 1、2…元識別尾數），入帳金額就能對到唯一訂單。 */
+function uniqueAmount_(base) {
+  const used = {};
+  pendingOrders_().forEach(o => used[Number(o['應付金額'])] = true);
+  let a = base;
+  while (used[a] && a < base + 50) a++;
+  return a;
+}
+
+function bankLogSheet_() {
+  let sh = sheet_(SH.BANKLOG);
+  if (!sh) {
+    sh = SpreadsheetApp.getActive().insertSheet(SH.BANKLOG);
+    sh.appendRow(HEADERS[SH.BANKLOG]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** 解析銀行推播，例如「你的帳戶在2026/10/19 00:54有 NT$1存入」 */
+function parseDeposit_(text) {
+  const t = String(text || '').replace(/\s+/g, ' ');
+  if (!/存入|入帳|轉入/.test(t)) return null;
+  const m = t.match(/NT\$ ?([\d,]+)/i) || t.match(/([\d,]+) ?元/);
+  return m ? Number(m[1].replace(/,/g, '')) : null;
+}
+
+function bankNotify_(b) {
+  if (!b.secret || String(b.secret) !== String(settings_().NOTIFY_SECRET)) throw new Error('暗號錯誤');
+  const text = String(b.text || '').slice(0, 300);
+  const log = bankLogSheet_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    // 同一則通知重複送來（MacroDroid 偶爾會觸發兩次）就略過
+    const recent = log.getLastRow() > 1 ? log.getRange(Math.max(2, log.getLastRow() - 30), 2, Math.min(31, log.getLastRow() - 1), 1).getValues().map(r => r[0]) : [];
+    if (recent.indexOf(text) >= 0) return { result: '重複通知，已略過' };
+
+    const amount = parseDeposit_(text);
+    if (!amount) { log.appendRow([now_(), text, '', '', '看不懂的通知']); return { result: '不是入帳通知' }; }
+    const hits = pendingOrders_().filter(o => Number(o['應付金額']) === amount);
+    if (hits.length !== 1) {
+      const why = hits.length ? '有 ' + hits.length + ' 筆同金額訂單' : '沒有對應的待付款訂單';
+      log.appendRow([now_(), text, amount, hits.map(o => o['訂單編號']).join(','), '需人工：' + why]);
+      notify_('入帳 NT$' + amount + ' 需要人工確認', why + '\n通知內容：' + text);
+      return { result: '需人工', amount: amount };
+    }
+    const o = hits[0];
+    setCells_(SH.ORDERS, o._row, { '狀態': '已付款', '備註': '自動對帳 ' + now_(), '更新時間': now_() });
+    log.appendRow([now_(), text, amount, o['訂單編號'], '已對上']);
+    lock.releaseLock();
+    if (!truthy_(settings_().AUTO_PLACE)) return { result: '已付款', orderId: o['訂單編號'] };
+    try {
+      const r = placeOrder_(o['訂單編號']);
+      notify_('自動下單成功 ' + o['訂單編號'], o['商品名稱'] + ' x ' + o['數量'] + '\nNT$' + amount + '，成本 NT$' + r.cost);
+      return { result: '已自動下單', orderId: o['訂單編號'] };
+    } catch (e) {
+      notify_('已收款但自動下單失敗 ' + o['訂單編號'], e.message + '\n請到後台處理');
+      return { result: '已付款，下單失敗', orderId: o['訂單編號'], error: e.message };
+    }
+  } finally { try { lock.releaseLock(); } catch (e) { } }
 }
 
 function findOrder_(id) { return rows_(SH.ORDERS).find(o => o['訂單編號'] === id); }
@@ -324,7 +411,7 @@ function placeOrder_(orderId) {
   try {
     const o = findOrder_(orderId);
     if (!o) throw new Error('查無此訂單');
-    if (['待付款', '已回報匯款', '下單失敗'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，不能重複下單');
+    if (['待付款', '已回報匯款', '已付款', '下單失敗'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，不能重複下單');
     const qty = Number(o['數量']);
     const ranked = rankedMappings_(o['商品ID'], qty);
     if (!ranked.length) throw new Error('沒有上游支援此商品與數量，請檢查「對應」表');
@@ -339,7 +426,7 @@ function placeOrder_(orderId) {
         setCells_(SH.ORDERS, o._row, {
           '狀態': '處理中', '上游': p['名稱'], '上游訂單號': String(res.order), '成本TWD': cost,
           '利潤': Math.round((Number(o['應付金額']) - cost) * 100) / 100,
-          '備註': errs.length ? '改用備援：' + errs.join('；') : '', '更新時間': now_(),
+          '備註': [o['備註'], errs.length ? '改用備援：' + errs.join('；') : ''].filter(Boolean).join('；'), '更新時間': now_(),
         });
         return { ok: true, provider: p['名稱'], providerOrder: res.order, cost: cost };
       } catch (e) { errs.push(p['名稱'] + ' ' + e.message); }
@@ -423,6 +510,7 @@ function doPost(e) {
     switch (b.action) {
       case 'createOrder': return json_({ ok: true, data: createOrder_(b) });
       case 'reportPayment': return json_({ ok: true, data: reportPayment_(b) });
+      case 'bankNotify': return json_({ ok: true, data: bankNotify_(b) });
     }
     // ---- 以下需要後台密碼 ----
     if (!b.key || String(b.key) !== String(settings_().ADMIN_KEY)) throw new Error('後台密碼錯誤');

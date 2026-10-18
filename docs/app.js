@@ -13,7 +13,7 @@
   }
 
   const fmt = n => 'NT$ ' + Number(n).toLocaleString('zh-TW');
-  const STATUS_LABEL = { '待付款': '待付款', '已回報匯款': '確認款項中', '處理中': '🔋 充電中', '已完成': '⚡ 已充滿' };
+  const STATUS_LABEL = { '待付款': '待付款', '已回報匯款': '確認款項中', '已付款': '✅ 已收款，準備充電', '處理中': '🔋 充電中', '已完成': '⚡ 已充滿' };
   const statusText = s => STATUS_LABEL[s] || s;
 
   function renderTabs() {
@@ -83,7 +83,7 @@
     $('orderBox').classList.add('hidden');
     $('payBox').classList.remove('hidden');
     $('payOid').textContent = d.orderId;
-    $('paySummary').innerHTML = `${d.productName} × ${Number(d.quantity).toLocaleString()}，請匯款 <b>${fmt(d.amount)}</b>`;
+    $('paySummary').innerHTML = `${d.productName} × ${Number(d.quantity).toLocaleString()}<br>請匯款 <b style="font-size:24px">${fmt(d.amount)}</b>${d.base && d.amount !== d.base ? `<br><span class="hint">（含 ${d.amount - d.base} 元識別尾數，方便系統自動對帳）</span>` : ''}`;
     $('bankInfo').textContent = d.bankInfo;
     $('payBox').dataset.oid = d.orderId;
     try { localStorage.setItem('lastOrder', d.orderId); } catch (e) { }
