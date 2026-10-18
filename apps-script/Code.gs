@@ -45,8 +45,9 @@ const DEFAULT_PRODUCTS = [
   ['FB_FOLLOW', 'Facebook', 'FB 粉專追蹤（90 天補單）', '貼上粉絲專頁網址', 100, 20000, true, 5, 38],
 ];
 
-// JAP 服務對應（2026/10 從 JAP 後台挑選）。IG_LIKE 待補。
+// JAP 服務對應（2026/10 從 JAP 後台挑選）
 const DEFAULT_MAPPING = [
+  ['IG_LIKE', 'JAP', 10065, 0], ['IG_LIKE', 'JAP', 10126, 0],
   ['IG_FOLLOW', 'JAP', 10242, 0], ['IG_FOLLOW', 'JAP', 10216, 0],
   ['IG_FOLLOW_ECO', 'JAP', 10350, 0],
   ['FB_LIKE', 'JAP', 9541, 0], ['FB_LIKE', 'JAP', 4351, 0],
@@ -56,6 +57,9 @@ const DEFAULT_MAPPING = [
 const PLATFORM_DOMAINS = {
   Instagram: ['instagram.com', 'instagr.am'],
   Facebook: ['facebook.com', 'fb.com', 'fb.watch', 'm.facebook.com'],
+  Threads: ['threads.net', 'threads.com'],
+  TikTok: ['tiktok.com'],
+  YouTube: ['youtube.com', 'youtu.be'],
 };
 
 // ============ 初始化 ============
