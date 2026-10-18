@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>社群小舖｜IG / FB 按讚與粉絲</title>
+<meta name="description" content="IG、FB 按讚與粉絲服務，免帳號密碼，匯款後人工確認、自動下單。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="siteName">社群小舖</h1>
+    <a class="line-btn" id="lineBtn" href="#" target="_blank" rel="noopener">LINE 客服</a>
+  </header>
+  <p class="hero">IG、FB 按讚與粉絲。不需要給帳號密碼，只要貼上網址。</p>
+
+  <div class="steps">
+    <div><b>1. 選服務</b>挑選項目與數量</div>
+    <div><b>2. 貼網址</b>貼文或個人頁連結</div>
+    <div><b>3. 匯款</b>回報帳號末五碼</div>
+    <div><b>4. 開始執行</b>確認款項後自動送出</div>
+  </div>
+
+  <section>
+    <div class="tabs" id="tabs"></div>
+    <div class="grid" id="grid"><div class="card hint">載入中…</div></div>
+  </section>
+
+  <!-- 下單表單 -->
+  <section id="orderBox" class="card hidden">
+    <h2 id="formTitle">填寫訂單</h2>
+    <p class="hint" id="formDesc"></p>
+    <label for="link">網址</label>
+    <input id="link" type="url" inputmode="url" placeholder="https://www.instagram.com/p/...">
+    <label for="qty">數量 <span class="hint" id="qtyRange"></span></label>
+    <input id="qty" type="number" inputmode="numeric">
+    <div class="row2">
+      <div><label for="name">姓名 / 暱稱</label><input id="name" autocomplete="name"></div>
+      <div><label for="contact">LINE ID 或手機</label><input id="contact"></div>
+    </div>
+    <label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink)">
+      <input id="agree" type="checkbox" style="width:auto;margin-top:5px">
+      <span>我已閱讀並同意<a href="terms.html" target="_blank">服務條款與風險說明</a></span>
+    </label>
+    <div class="total"><span>應付金額</span><b id="total">NT$ —</b></div>
+    <div class="hint" id="minHint"></div>
+    <button class="btn" id="submitBtn" disabled>送出訂單</button>
+    <div class="msg" id="orderMsg"></div>
+  </section>
+
+  <!-- 下單成功：匯款資訊 -->
+  <section id="payBox" class="card hidden">
+    <h2>訂單已建立，請匯款</h2>
+    <div class="hint">訂單編號（請截圖保存）</div>
+    <div class="oid" id="payOid"></div>
+    <p id="paySummary"></p>
+    <div class="bank" id="bankInfo"></div>
+    <label for="last5">匯款完成後，輸入你的帳號末五碼</label>
+    <input id="last5" inputmode="numeric" maxlength="5" placeholder="12345">
+    <button class="btn" id="reportBtn">我已匯款</button>
+    <div class="msg" id="payMsg"></div>
+  </section>
+
+  <!-- 查詢訂單 -->
+  <section class="card">
+    <h2>查詢訂單</h2>
+    <div class="row2">
+      <input id="qid" placeholder="訂單編號，例如 L261018ABCDE">
+      <button class="btn ghost" id="queryBtn" style="margin-top:0">查詢</button>
+    </div>
+    <div class="msg" id="queryMsg"></div>
+    <div id="queryResult"></div>
+  </section>
+
+  <section>
+    <h2>常見問題</h2>
+    <details><summary>需要提供帳號密碼嗎？</summary>
+      <p>不需要，我們也不會向你索取。只要提供貼文或個人頁的網址，帳號必須是公開狀態。</p></details>
+    <details><summary>付款後多久開始？</summary>
+      <p>我們會人工核對款項，確認後系統自動送出。核對時間通常在幾小時內，深夜匯款則在隔天處理。開始執行後，多數項目在數分鐘到 24 小時內完成，大量訂單會分批慢慢增加。</p></details>
+    <details><summary>數量會掉嗎？</summary>
+      <p>有可能。這類服務在完成後，數字可能因平台清理而減少。標示「含補單」的項目，在保固期內掉量可以申請補回；沒有標示的項目不提供補單。</p></details>
+    <details><summary>會不會影響我的帳號？</summary>
+      <p>購買互動數據不符合 Instagram 與 Facebook 的使用規範。雖然大多數人使用後沒有遇到問題，但我們無法保證平台不會降低觸及或限制帳號。請評估風險後再下單，建議不要用在非常重要的帳號上。</p></details>
+    <details><summary>可以取消或退款嗎？</summary>
+      <p>款項確認前可隨時取消，全額退款。已開始執行的訂單無法取消；若執行失敗或只完成部分數量，我們會退還未完成部分的金額。</p></details>
+    <details><summary>為什麼價格比較便宜？</summary>
+      <p>我們同時向多家供應商比價，每筆訂單自動選擇當下最划算、品質合格的來源，省下的成本直接反映在售價。</p></details>
+    <details><summary>下單時要注意什麼？</summary>
+      <ul>
+        <li>執行期間請保持帳號公開，不要更改帳號名稱或刪除貼文。</li>
+        <li>同一個網址請等上一筆完成後再下新單，否則數量可能無法正確計算。</li>
+        <li>網址貼錯導致送到別的貼文或帳號，無法退款，送出前請再確認一次。</li>
+      </ul></details>
+  </section>
+
+  <footer>
+    <a href="terms.html">服務條款與隱私權政策</a> ・ 有任何問題請透過 LINE 官方帳號聯絡我們
+  </footer>
+</div>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

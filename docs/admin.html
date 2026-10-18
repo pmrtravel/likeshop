@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>後台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" style="max-width:1200px">
+  <header><h1 id="title">後台</h1><button class="sbtn hidden" id="logout">登出</button></header>
+
+  <section id="loginBox" class="card" style="max-width:380px">
+    <label for="key">後台密碼（設定表的 ADMIN_KEY）</label>
+    <input id="key" type="password">
+    <button class="btn" id="loginBtn">登入</button>
+    <div class="msg" id="loginMsg"></div>
+  </section>
+
+  <div id="main" class="hidden">
+    <section class="card">
+      <div class="toolbar">
+        <select id="filter">
+          <option value="todo">待處理（已回報匯款 / 待付款 / 失敗）</option>
+          <option value="run">處理中</option>
+          <option value="refund">需退款</option>
+          <option value="all">全部</option>
+        </select>
+        <input id="search" placeholder="搜尋編號 / 姓名 / 末五碼" style="width:220px">
+        <button class="sbtn" id="reload">重新載入</button>
+        <button class="sbtn" id="sync">同步上游狀態</button>
+        <button class="sbtn" id="prices">更新價格</button>
+        <button class="sbtn" id="compareBtn">比價表 / 餘額</button>
+      </div>
+      <div class="msg" id="msg"></div>
+      <div class="hint" id="stats"></div>
+    </section>
+
+    <section class="card hidden" id="compareBox"></section>
+
+    <section class="card tbl">
+      <table>
+        <thead><tr><th>編號 / 時間</th><th>客人</th><th>商品</th><th>金額</th><th>末五碼</th><th>狀態</th><th>上游 / 利潤</th><th></th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </section>
+  </div>
+</div>
+<script src="config.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
