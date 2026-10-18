@@ -24,7 +24,7 @@ const HEADERS = {
 };
 
 const DEFAULT_SETTINGS = [
-  ['SITE_NAME', '我的社群小舖', '網站名稱'],
+  ['SITE_NAME', '人氣充電站', '網站名稱'],
   ['MARKUP', 2, '「商品」表沒填售價時，用 成本×(1+MARKUP) 定價（2 = 成本 3 倍）'],
   ['MIN_MARGIN', 0.30, '利潤保底：利潤至少要佔售價 30%，上游漲價時自動調高售價'],
   ['USD_TWD', 32.5, '美金匯率（上游用 USD 計價時換算）'],

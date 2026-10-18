@@ -13,6 +13,8 @@
   }
 
   const fmt = n => 'NT$ ' + Number(n).toLocaleString('zh-TW');
+  const STATUS_LABEL = { '待付款': '待付款', '已回報匯款': '確認款項中', '處理中': '🔋 充電中', '已完成': '⚡ 已充滿' };
+  const statusText = s => STATUS_LABEL[s] || s;
 
   function renderTabs() {
     const plats = [...new Set(DATA.products.map(p => p.platform))];
@@ -94,7 +96,7 @@
       const r = await api('POST', { action: 'reportPayment', orderId: $('payBox').dataset.oid, last5: $('last5').value });
       if (!r.ok) throw new Error(r.error);
       $('payMsg').className = 'msg ok';
-      $('payMsg').textContent = '已收到！確認款項後會開始執行，可用訂單編號隨時查詢進度。';
+      $('payMsg').textContent = '已收到！確認款項後就開始充電 🔋，可用訂單編號隨時查詢進度。';
     } catch (e) { $('payMsg').className = 'msg err'; $('payMsg').textContent = e.message; btn.disabled = false; }
   };
 
@@ -107,7 +109,7 @@
       if (!r.ok) throw new Error(r.error);
       const o = r.data; $('queryMsg').textContent = '';
       $('queryResult').innerHTML = `
-        <p>狀態：<span class="status">${o.status}</span>${o.remains !== '' && o.remains !== undefined && o.status !== '已完成' ? `（剩餘 ${o.remains}）` : ''}</p>
+        <p>狀態：<span class="status">${statusText(o.status)}</span>${o.remains !== '' && o.remains !== undefined && o.status !== '已完成' ? `（剩餘 ${o.remains}）` : ''}</p>
         <p class="hint">${o.productName} × ${o.quantity}・${fmt(o.amount)}・${o.created}</p>
         ${o.status === '待付款' ? `<button class="btn ghost" id="toPay">回報匯款</button>` : ''}`;
       const tp = $('toPay');
@@ -117,6 +119,7 @@
 
   (async function init() {
     try { const last = localStorage.getItem('lastOrder'); if (last) $('qid').value = last; } catch (e) { }
+    if (!window.API_URL || API_URL.indexOf('請換成') >= 0) { $('grid').innerHTML = '<div class="card hint">🔋 網站準備中，即將開放下單</div>'; return; }
     try {
       const r = await api('GET', { action: 'products' });
       if (!r.ok) throw new Error(r.error);
