@@ -169,6 +169,13 @@ function callProvider_(provider, params) {
 
 // ============ 比價 ============
 /** 抓所有上游服務清單，更新「上游服務」與「對應」的價格。每小時自動執行。 */
+/** 有沒有補單保固：API 的 refill 只代表「有補單按鈕」，所以也看服務名稱裡的 [Refill: 30D] / Lifetime */
+function hasRefill_(s) {
+  const name = String(s.name || '');
+  if (/refill\s*:?\s*(no|none|0)\b/i.test(name) || /no\s*refill/i.test(name)) return false;
+  return truthy_(s.refill) || /refill\s*:?\s*(\d+\s*d|\d+\s*days?|lifetime|\d+)/i.test(name) || /\bR\d+\b/.test(name);
+}
+
 function refreshPrices() {
   const provs = providers_();
   const all = [];
@@ -182,7 +189,7 @@ function refreshPrices() {
       list.forEach(s => {
         index[p['名稱'] + '|' + s.service] = s;
         all.push([p['名稱'], s.service, s.name, s.category, s.type, Number(s.rate), Number(s.min), Number(s.max),
-          truthy_(s.refill), truthy_(s.cancel)]);
+          hasRefill_(s), truthy_(s.cancel)]);
       });
     } catch (e) { errors.push(p['名稱'] + ': ' + e.message); }
   });
@@ -200,7 +207,7 @@ function refreshPrices() {
     if (!p || !s) return;
     setCells_(SH.MAPPING, m._row, {
       '單價每千': Number(s.rate), '幣別': p['幣別'] || 'USD', '最少': Number(s.min), '最多': Number(s.max),
-      '補單': truthy_(s.refill), '台幣成本每千': Math.round(toTwd_(s.rate, p['幣別']) * 100) / 100,
+      '補單': hasRefill_(s), '台幣成本每千': Math.round(toTwd_(s.rate, p['幣別']) * 100) / 100,
       '更新時間': ts, '服務名稱': s.name,
     });
   });
