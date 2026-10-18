@@ -37,11 +37,20 @@ const DEFAULT_SETTINGS = [
 ];
 
 const DEFAULT_PRODUCTS = [
-  // 售價參考 KsD 同等級服務約 75 折（2026/10）：IG讚160、IG粉300、FB讚35、FB粉專47
-  ['IG_LIKE', 'Instagram', 'IG 貼文按讚', '貼上公開貼文網址', 50, 20000, true, 1, 120],
-  ['IG_FOLLOW', 'Instagram', 'IG 粉絲', '貼上個人頁網址，帳號需公開', 100, 10000, true, 2, 220],
-  ['FB_LIKE', 'Facebook', 'FB 貼文按讚', '貼上公開貼文網址', 100, 20000, true, 3, 28],
-  ['FB_FOLLOW', 'Facebook', 'FB 粉專追蹤', '貼上粉絲專頁網址', 100, 20000, true, 4, 38],
+  // 售價參考 KsD 同等級約 75 折（2026/10）
+  ['IG_LIKE', 'Instagram', 'IG 貼文按讚（30 天補單）', '貼上公開貼文網址', 50, 20000, true, 1, 120],
+  ['IG_FOLLOW', 'Instagram', 'IG 粉絲（30 天補單）', '貼上個人頁網址，帳號需公開。30 天內掉量可補回', 100, 10000, true, 2, 220],
+  ['IG_FOLLOW_ECO', 'Instagram', 'IG 粉絲・經濟款（不補單）', '價格最低，但掉量較多且不補單。帳號需公開', 100, 20000, true, 3, 90],
+  ['FB_LIKE', 'Facebook', 'FB 貼文按讚（30 天補單）', '貼上公開貼文網址', 100, 20000, true, 4, 28],
+  ['FB_FOLLOW', 'Facebook', 'FB 粉專追蹤（90 天補單）', '貼上粉絲專頁網址', 100, 20000, true, 5, 38],
+];
+
+// JAP 服務對應（2026/10 從 JAP 後台挑選）。IG_LIKE 待補。
+const DEFAULT_MAPPING = [
+  ['IG_FOLLOW', 'JAP', 10242, 0], ['IG_FOLLOW', 'JAP', 10216, 0],
+  ['IG_FOLLOW_ECO', 'JAP', 10350, 0],
+  ['FB_LIKE', 'JAP', 9541, 0], ['FB_LIKE', 'JAP', 4351, 0],
+  ['FB_FOLLOW', 'JAP', 7566, 0], ['FB_FOLLOW', 'JAP', 9548, 0],
 ];
 
 const PLATFORM_DOMAINS = {
@@ -65,6 +74,8 @@ function setup() {
   if (st.getLastRow() === 1) st.getRange(2, 1, DEFAULT_SETTINGS.length, 3).setValues(DEFAULT_SETTINGS);
   const pr = ss.getSheetByName(SH.PRODUCTS);
   if (pr.getLastRow() === 1) pr.getRange(2, 1, DEFAULT_PRODUCTS.length, 9).setValues(DEFAULT_PRODUCTS);
+  const mp = ss.getSheetByName(SH.MAPPING);
+  if (mp.getLastRow() === 1) mp.getRange(2, 1, DEFAULT_MAPPING.length, 4).setValues(DEFAULT_MAPPING);
   const pv = ss.getSheetByName(SH.PROVIDERS);
   if (pv.getLastRow() === 1) {
     pv.appendRow(['JAP', 'https://justanotherpanel.com/api/v2', '', 'USD', false, '填入 API 金鑰後把啟用改成 TRUE']);
