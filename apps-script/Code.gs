@@ -320,12 +320,13 @@ function pendingOrders_() {
   return rows_(SH.ORDERS).filter(o => PENDING.indexOf(o['狀態']) >= 0 && toDate_(o['建立時間']).getTime() >= since);
 }
 
-/** 讓每筆待付款訂單金額都不同（必要時加 1、2…元識別尾數），入帳金額就能對到唯一訂單。 */
+/** 讓每筆待付款訂單金額都不同：撞到同金額時往下折 1、2…元（識別折扣），入帳金額就能對到唯一訂單。 */
 function uniqueAmount_(base) {
   const used = {};
   pendingOrders_().forEach(o => used[Number(o['應付金額'])] = true);
   let a = base;
-  while (used[a] && a < base + 50) a++;
+  while (used[a] && a > base - 30 && a > 1) a--;
+  if (used[a]) throw new Error('目前同金額訂單太多，請稍後再試或調整數量');
   return a;
 }
 

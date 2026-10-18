@@ -83,7 +83,7 @@
     $('orderBox').classList.add('hidden');
     $('payBox').classList.remove('hidden');
     $('payOid').textContent = d.orderId;
-    $('paySummary').innerHTML = `${d.productName} × ${Number(d.quantity).toLocaleString()}<br>請匯款 <b style="font-size:24px">${fmt(d.amount)}</b>${d.base && d.amount !== d.base ? `<br><span class="hint">（含 ${d.amount - d.base} 元識別尾數，方便系統自動對帳）</span>` : ''}`;
+    $('paySummary').innerHTML = `${d.productName} × ${Number(d.quantity).toLocaleString()}<br>請匯款 <b style="font-size:24px">${fmt(d.amount)}</b>${d.base && d.amount !== d.base ? `<br><span class="hint">🎁 已折抵 ${d.base - d.amount} 元（原價 ${fmt(d.base)}）</span>` : ''}`;
     $('bankInfo').textContent = d.bankInfo;
     $('payBox').dataset.oid = d.orderId;
     try { localStorage.setItem('lastOrder', d.orderId); } catch (e) { }
