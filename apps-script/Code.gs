@@ -16,7 +16,7 @@ const SH = {
 const HEADERS = {
   [SH.SETTINGS]: ['項目', '值', '說明'],
   [SH.PROVIDERS]: ['名稱', 'API網址', 'API金鑰', '幣別', '啟用', '備註'],
-  [SH.PRODUCTS]: ['商品ID', '平台', '名稱', '說明', '最少', '最多', '啟用', '排序'],
+  [SH.PRODUCTS]: ['商品ID', '平台', '名稱', '說明', '最少', '最多', '啟用', '排序', '售價每千'],
   [SH.MAPPING]: ['商品ID', '上游', '服務ID', '加權', '單價每千', '幣別', '最少', '最多', '補單', '台幣成本每千', '更新時間', '服務名稱'],
   [SH.SERVICES]: ['上游', '服務ID', '名稱', '分類', '類型', '單價每千', '最少', '最多', '補單', '可取消'],
   [SH.ORDERS]: ['訂單編號', '建立時間', '姓名', '聯絡方式', '商品ID', '商品名稱', '連結', '數量', '應付金額',
@@ -25,7 +25,8 @@ const HEADERS = {
 
 const DEFAULT_SETTINGS = [
   ['SITE_NAME', '我的社群小舖', '網站名稱'],
-  ['MARKUP', 0.10, '加價比例（0.10 = 10%）'],
+  ['MARKUP', 2, '「商品」表沒填售價時，用 成本×(1+MARKUP) 定價（2 = 成本 3 倍）'],
+  ['MIN_MARGIN', 0.30, '利潤保底：利潤至少要佔售價 30%，上游漲價時自動調高售價'],
   ['USD_TWD', 32.5, '美金匯率（上游用 USD 計價時換算）'],
   ['MIN_ORDER_TWD', 100, '最低訂單金額（台幣），太小的單不划算'],
   ['NO_REFILL_PENALTY', 0.20, '沒有補單保固的服務，比價時視為貴 20%'],
@@ -36,10 +37,11 @@ const DEFAULT_SETTINGS = [
 ];
 
 const DEFAULT_PRODUCTS = [
-  ['IG_LIKE', 'Instagram', 'IG 貼文按讚', '貼上公開貼文網址', 50, 10000, true, 1],
-  ['IG_FOLLOW', 'Instagram', 'IG 粉絲', '貼上個人頁網址，帳號需公開', 100, 10000, true, 2],
-  ['FB_LIKE', 'Facebook', 'FB 貼文按讚', '貼上公開貼文網址', 50, 10000, true, 3],
-  ['FB_FOLLOW', 'Facebook', 'FB 粉專追蹤', '貼上粉絲專頁網址', 100, 10000, true, 4],
+  // 售價參考 KsD 同等級服務約 75 折（2026/10）：IG讚160、IG粉300、FB讚35、FB粉專47
+  ['IG_LIKE', 'Instagram', 'IG 貼文按讚', '貼上公開貼文網址', 50, 20000, true, 1, 120],
+  ['IG_FOLLOW', 'Instagram', 'IG 粉絲', '貼上個人頁網址，帳號需公開', 100, 10000, true, 2, 220],
+  ['FB_LIKE', 'Facebook', 'FB 貼文按讚', '貼上公開貼文網址', 100, 20000, true, 3, 28],
+  ['FB_FOLLOW', 'Facebook', 'FB 粉專追蹤', '貼上粉絲專頁網址', 100, 20000, true, 4, 38],
 ];
 
 const PLATFORM_DOMAINS = {
@@ -62,7 +64,7 @@ function setup() {
   const st = ss.getSheetByName(SH.SETTINGS);
   if (st.getLastRow() === 1) st.getRange(2, 1, DEFAULT_SETTINGS.length, 3).setValues(DEFAULT_SETTINGS);
   const pr = ss.getSheetByName(SH.PRODUCTS);
-  if (pr.getLastRow() === 1) pr.getRange(2, 1, DEFAULT_PRODUCTS.length, 8).setValues(DEFAULT_PRODUCTS);
+  if (pr.getLastRow() === 1) pr.getRange(2, 1, DEFAULT_PRODUCTS.length, 9).setValues(DEFAULT_PRODUCTS);
   const pv = ss.getSheetByName(SH.PROVIDERS);
   if (pv.getLastRow() === 1) {
     pv.appendRow(['JAP', 'https://justanotherpanel.com/api/v2', '', 'USD', false, '填入 API 金鑰後把啟用改成 TRUE']);
@@ -108,6 +110,7 @@ function settings_() {
   const s = {};
   rows_(SH.SETTINGS).forEach(r => s[r['項目']] = r['值']);
   s.MARKUP = Number(s.MARKUP) || 0;
+  s.MIN_MARGIN = Math.min(Number(s.MIN_MARGIN) || 0, 0.9);
   s.USD_TWD = Number(s.USD_TWD) || 32;
   s.MIN_ORDER_TWD = Number(s.MIN_ORDER_TWD) || 0;
   s.NO_REFILL_PENALTY = Number(s.NO_REFILL_PENALTY) || 0;
@@ -217,7 +220,7 @@ function productList_() {
         id: p['商品ID'], platform: p['平台'], name: p['名稱'], desc: p['說明'],
         min: Number(p['最少']), max: Number(p['最多']), order: Number(p['排序']) || 99,
         refill: truthy_(best.m['補單']),
-        pricePer1000: Math.ceil(best.cost * (1 + s.MARKUP) * 100) / 100,
+        pricePer1000: sellPrice_(p, best.cost),
       };
     })
     .filter(Boolean)
@@ -227,6 +230,15 @@ function productList_() {
   };
   cache.put('products', JSON.stringify(out), 300);
   return out;
+}
+
+/** 售價：有填「售價每千」就用它，但不得低於利潤保底；沒填就用 成本×(1+MARKUP)。 */
+function sellPrice_(p, cost) {
+  const s = settings_();
+  const floor = cost / (1 - s.MIN_MARGIN);
+  const set = Number(p['售價每千']) || 0;
+  const price = set > 0 ? Math.max(set, floor) : cost * (1 + s.MARKUP);
+  return Math.ceil(price * 100) / 100;
 }
 
 function priceFor_(product, qty) { return Math.ceil(product.pricePer1000 * qty / 1000); }
@@ -416,7 +428,8 @@ function doPost(e) {
       case 'syncStatuses': return json_({ ok: true, data: syncStatuses() });
       case 'compare': {
         const out = rows_(SH.PRODUCTS).map(p => ({
-          id: p['商品ID'], name: p['名稱'],
+          id: p['商品ID'], name: p['名稱'], setPrice: p['售價每千'],
+          price: rankedMappings_(p['商品ID'])[0] ? sellPrice_(p, rankedMappings_(p['商品ID'])[0].cost) : '',
           options: rankedMappings_(p['商品ID']).map(r => ({
             provider: r.m['上游'], service: r.m['服務ID'], name: r.m['服務名稱'], costPer1000: r.cost,
             score: Math.round(r.score * 100) / 100, refill: truthy_(r.m['補單']), min: r.m['最少'], max: r.m['最多'],

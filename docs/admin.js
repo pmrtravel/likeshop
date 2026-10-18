@@ -98,7 +98,7 @@
       const d = await post('compare');
       box.innerHTML = `<h2>上游餘額</h2><p>${d.balances.map(b => `${esc(b.provider)}：${b.error ? '<span class="msg err">' + esc(b.error) + '</span>' : esc(b.balance) + ' ' + esc(b.currency)}`).join('　') || '<span class="hint">尚未啟用任何上游</span>'}</p>
         <h2>比價（由便宜到貴，第一名會被優先使用）</h2>` +
-        d.products.map(p => `<p><b>${esc(p.name)}</b></p>` + (p.options.length ? `<table><tr><th>上游</th><th>服務</th><th>成本/千</th><th>比價分數</th><th>補單</th><th>範圍</th></tr>` +
+        d.products.map(p => `<p><b>${esc(p.name)}</b>　售價 ${fmt(p.price)}/千${p.options[0] ? `・利潤率 ${Math.round((1 - p.options[0].costPer1000 / p.price) * 100)}%` : ''}${p.setPrice && p.price > p.setPrice ? ' <span class="pill bad">已自動調高</span>' : ''}</p>` + (p.options.length ? `<table><tr><th>上游</th><th>服務</th><th>成本/千</th><th>比價分數</th><th>補單</th><th>範圍</th></tr>` +
           p.options.map((x, i) => `<tr><td>${i === 0 ? '⭐ ' : ''}${esc(x.provider)} #${esc(x.service)}</td><td class="hint">${esc(x.name)}</td><td>${fmt(x.costPer1000)}</td><td>${esc(x.score)}</td><td>${x.refill ? '✅' : '—'}</td><td>${esc(x.min)}~${esc(x.max)}</td></tr>`).join('') + '</table>'
           : '<p class="hint">尚未設定對應</p>')).join('');
     } catch (e) { box.innerHTML = `<span class="msg err">${esc(e.message)}</span>`; }
