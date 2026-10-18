@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS = [
   ['BANK_INFO', '銀行：○○銀行(000)\n帳號：0000-0000-0000\n戶名：○○○', '匯款資訊，會顯示給客人'],
   ['LINE_OA_URL', 'https://line.me/R/ti/p/@your-id', 'LINE 官方帳號連結'],
   ['NOTIFY_SECRET', Utilities.getUuid().slice(0, 12), '手機轉發入帳通知用的暗號（MacroDroid 要填一樣的）'],
+  ['PAY_WINDOW_MIN', 5, '付款期限（分鐘），超過就標成已逾期'],
   ['AUTO_PLACE', true, '入帳金額對上唯一一筆訂單時，自動向上游下單（FALSE = 只標記已付款）'],
 ];
 
@@ -308,13 +309,15 @@ function createOrder_(b) {
   const row = HEADERS[SH.ORDERS].map(h => (h in vals ? vals[h] : ''));
   sheet_(SH.ORDERS).appendRow(row);
   notify_('新訂單 ' + id, name + ' / ' + contact + '\n' + p.name + ' x ' + qty + '\nNT$' + amount + '\n' + link);
-  return { orderId: id, amount: amount, base: base, bankInfo: settings_().BANK_INFO, productName: p.name, quantity: qty };
+  return { orderId: id, amount: amount, base: base, payWindowMin: payWindowMin_(), bankInfo: settings_().BANK_INFO, productName: p.name, quantity: qty };
   } finally { lock.releaseLock(); }
 }
 
 // ============ 自動對帳 ============
 const PENDING = ['待付款', '已回報匯款'];
-const MATCH_HOURS = 72;
+const LATE_HOURS = 24; // 逾期後 24 小時內才入帳，仍嘗試對帳
+
+function payWindowMin_() { return Number(settings_().PAY_WINDOW_MIN) || 5; }
 
 function toDate_(v) {
   if (v instanceof Date) return v;
@@ -322,9 +325,31 @@ function toDate_(v) {
   return m ? new Date(m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':' + m[6] + '+08:00') : new Date(0);
 }
 
+/** 付款期限內、還沒付款的訂單（佔用金額） */
 function pendingOrders_() {
-  const since = Date.now() - MATCH_HOURS * 3600 * 1000;
+  const since = Date.now() - payWindowMin_() * 60 * 1000;
   return rows_(SH.ORDERS).filter(o => PENDING.indexOf(o['狀態']) >= 0 && toDate_(o['建立時間']).getTime() >= since);
+}
+
+/** 超過付款期限的訂單（含已標記逾期），給晚到的入帳備援對帳 */
+function lateOrders_() {
+  const now = Date.now(), win = payWindowMin_() * 60 * 1000;
+  return rows_(SH.ORDERS).filter(o => {
+    const t = toDate_(o['建立時間']).getTime();
+    return (o['狀態'] === '已逾期' || PENDING.indexOf(o['狀態']) >= 0) && t < now - win && t >= now - LATE_HOURS * 3600 * 1000;
+  });
+}
+
+/** 把超過付款期限的待付款訂單標成「已逾期」（每 15 分鐘的排程也會跑） */
+function expireOrders_() {
+  const win = payWindowMin_() * 60 * 1000;
+  let n = 0;
+  rows_(SH.ORDERS).forEach(o => {
+    if (o['狀態'] === '待付款' && toDate_(o['建立時間']).getTime() < Date.now() - win) {
+      setCells_(SH.ORDERS, o._row, { '狀態': '已逾期', '更新時間': now_() }); n++;
+    }
+  });
+  return n;
 }
 
 /** 讓每筆待付款訂單金額都不同：撞到同金額時往下折 1、2…元（識別折扣），入帳金額就能對到唯一訂單。 */
@@ -368,7 +393,8 @@ function bankNotify_(b) {
 
     const amount = parseDeposit_(text);
     if (!amount) { log.appendRow([now_(), text, '', '', '看不懂的通知']); return { result: '不是入帳通知' }; }
-    const hits = pendingOrders_().filter(o => Number(o['應付金額']) === amount);
+    let hits = pendingOrders_().filter(o => Number(o['應付金額']) === amount);
+    if (!hits.length) hits = lateOrders_().filter(o => Number(o['應付金額']) === amount);
     if (hits.length !== 1) {
       const why = hits.length ? '有 ' + hits.length + ' 筆同金額訂單' : '沒有對應的待付款訂單';
       log.appendRow([now_(), text, amount, hits.map(o => o['訂單編號']).join(','), '需人工：' + why]);
@@ -398,7 +424,7 @@ function reportPayment_(b) {
   if (!o) throw new Error('查無此訂單');
   const last5 = String(b.last5 || '').replace(/\D/g, '');
   if (last5.length !== 5) throw new Error('請輸入匯款帳號末五碼');
-  if (o['狀態'] !== '待付款' && o['狀態'] !== '已回報匯款') throw new Error('此訂單狀態為「' + o['狀態'] + '」，無需回報');
+  if (['待付款', '已回報匯款', '已逾期'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，無需回報');
   setCells_(SH.ORDERS, o._row, { '狀態': '已回報匯款', '匯款末五碼': last5, '回報時間': now_(), '更新時間': now_() });
   notify_('客人回報匯款 ' + o['訂單編號'], '末五碼 ' + last5 + '，金額 NT$' + o['應付金額'] + '\n請核對後到後台按「已繳費請下單」');
   return { ok: true };
@@ -419,7 +445,7 @@ function placeOrder_(orderId) {
   try {
     const o = findOrder_(orderId);
     if (!o) throw new Error('查無此訂單');
-    if (['待付款', '已回報匯款', '已付款', '下單失敗'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，不能重複下單');
+    if (['待付款', '已回報匯款', '已付款', '已逾期', '下單失敗'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，不能重複下單');
     const qty = Number(o['數量']);
     const ranked = rankedMappings_(o['商品ID'], qty);
     if (!ranked.length) throw new Error('沒有上游支援此商品與數量，請檢查「對應」表');
@@ -451,6 +477,7 @@ const STATUS_MAP = {
 
 /** 同步上游訂單狀態。每 15 分鐘自動執行。 */
 function syncStatuses() {
+  try { expireOrders_(); } catch (e) { }
   const provs = providers_();
   const active = rows_(SH.ORDERS).filter(o => o['狀態'] === '處理中' && o['上游訂單號']);
   const byProv = {};

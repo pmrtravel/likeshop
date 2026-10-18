@@ -13,7 +13,7 @@
   }
 
   const fmt = n => 'NT$ ' + Number(n).toLocaleString('zh-TW');
-  const STATUS_LABEL = { '待付款': '待付款', '已回報匯款': '確認款項中', '已付款': '✅ 已收款，準備充電', '處理中': '🔋 充電中', '已完成': '⚡ 已充滿' };
+  const STATUS_LABEL = { '待付款': '待付款', '已回報匯款': '確認款項中', '已付款': '✅ 已收款，準備充電', '處理中': '🔋 充電中', '已完成': '⚡ 已充滿', '已逾期': '已逾期（未收到款項）' };
   const statusText = s => STATUS_LABEL[s] || s;
 
   function renderTabs() {
@@ -86,8 +86,23 @@
     $('paySummary').innerHTML = `${d.productName} × ${Number(d.quantity).toLocaleString()}<br>請匯款 <b style="font-size:24px">${fmt(d.amount)}</b>${d.base && d.amount !== d.base ? `<br><span class="hint">🎁 已折抵 ${d.base - d.amount} 元（原價 ${fmt(d.base)}）</span>` : ''}`;
     $('bankInfo').textContent = d.bankInfo;
     $('payBox').dataset.oid = d.orderId;
+    startCountdown(d.payWindowMin || 5);
     try { localStorage.setItem('lastOrder', d.orderId); } catch (e) { }
     $('payBox').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  let cdTimer = null;
+  function startCountdown(min) {
+    clearInterval(cdTimer);
+    const end = Date.now() + min * 60000;
+    const tick = () => {
+      const left = Math.max(0, end - Date.now());
+      const m = Math.floor(left / 60000), sec = Math.floor(left % 60000 / 1000);
+      $('countdown').innerHTML = left > 0 ? `⏱ 請在 <b>${m}:${String(sec).padStart(2, '0')}</b> 內完成匯款`
+        : '⏱ 已超過付款時間。已經匯款的話不用擔心，我們會人工確認；還沒匯的話請重新下單。';
+      if (!left) clearInterval(cdTimer);
+    };
+    tick(); cdTimer = setInterval(tick, 1000);
   }
 
   $('reportBtn').onclick = async () => {
