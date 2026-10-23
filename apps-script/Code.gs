@@ -636,7 +636,14 @@ function doGet(e) {
 
 function doPost(e) {
   let b = {};
-  try { b = JSON.parse(e.postData.contents || '{}'); } catch (x) { }
+  const raw = (e.postData && e.postData.contents) || '';
+  const qp = e.parameter || {};
+  if (qp.action === 'bankNotify') {
+    // 手機轉發用的簡單格式：網址帶 ?action=bankNotify&secret=…，內文直接放通知文字（不用組 JSON，避免引號、換行出錯）
+    b = { action: 'bankNotify', secret: qp.secret, text: raw.replace(/\s+/g, ' ').trim() };
+  } else {
+    try { b = JSON.parse(raw || '{}'); } catch (x) { }
+  }
   try {
     switch (b.action) {
       case 'createOrder': return json_({ ok: true, data: createOrder_(b) });
