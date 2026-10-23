@@ -37,13 +37,20 @@
     <input id="qty" type="number" inputmode="numeric">
     <div class="row2">
       <div><label for="name">姓名 / 暱稱</label><input id="name" autocomplete="name"></div>
-      <div><label for="contact">LINE ID 或手機</label><input id="contact"></div>
+      <div><label for="phone">手機（會員）</label><input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="0912345678"></div>
+    </div>
+    <p class="hint" style="margin:4px 0 0">💎 填手機就是會員，第二次下單起自動享老客折扣，不用註冊、不用密碼。</p>
+    <div class="row2">
+      <div><label for="contact">LINE ID（選填）</label><input id="contact"></div>
+      <div><label for="coupon">優惠碼（選填）</label>
+        <div style="display:flex;gap:6px"><input id="coupon" autocapitalize="characters" style="text-transform:uppercase"><button class="sbtn" id="couponBtn" type="button">套用</button></div></div>
     </div>
     <label style="display:flex;gap:8px;align-items:flex-start;color:var(--ink)">
       <input id="agree" type="checkbox" style="width:auto;margin-top:5px">
       <span>我已閱讀並同意<a href="terms.html" target="_blank">服務條款與風險說明</a></span>
     </label>
     <div class="total"><span>應付金額</span><b id="total">NT$ —</b></div>
+    <div class="hint" id="discountHint"></div>
     <div class="hint" id="minHint"></div>
     <button class="btn" id="submitBtn" disabled>⚡ 送出訂單</button>
     <div class="msg" id="orderMsg"></div>
@@ -87,6 +94,8 @@
       <p>有可能。這類服務在完成後，數字可能因平台清理而減少。標示「含補單」的項目，在保固期內掉量可以申請補回；沒有標示的項目不提供補單。</p></details>
     <details><summary>會不會影響我的帳號？</summary>
       <p>購買互動數據不符合 Instagram 與 Facebook 的使用規範。雖然大多數人使用後沒有遇到問題，但我們無法保證平台不會降低觸及或限制帳號。請評估風險後再下單，建議不要用在非常重要的帳號上。</p></details>
+    <details><summary>怎麼成為會員？有什麼優惠？</summary>
+      <p>下單時填手機號碼就是會員，不用註冊也不用設密碼。同一支手機之前有成功下單過，之後每次下單都會自動打折。拿到優惠碼的話，填在「優惠碼」欄位；老客折扣和優惠碼會自動幫你用比較划算的那一個。</p></details>
     <details><summary>可以取消或退款嗎？</summary>
       <p>款項確認前可隨時取消，全額退款。已開始執行的訂單無法取消；若執行失敗或只完成部分數量，我們會退還未完成部分的金額。</p></details>
     <details><summary>為什麼價格比較便宜？</summary>

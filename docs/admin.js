@@ -45,7 +45,7 @@
       if (f === 'todo' && !['已回報匯款', '待付款', '下單失敗'].includes(s)) return false;
       if (f === 'run' && s !== '處理中') return false;
       if (f === 'refund' && !/退|取消/.test(s)) return false;
-      if (q && ![o['訂單編號'], o['姓名'], o['聯絡方式'], o['匯款末五碼']].join(' ').toLowerCase().includes(q)) return false;
+      if (q && ![o['訂單編號'], o['姓名'], o['聯絡方式'], o['手機'], o['優惠碼'], o['匯款末五碼']].join(' ').toLowerCase().includes(q)) return false;
       return true;
     }).sort((a, b) => (a['狀態'] === '已回報匯款' ? -1 : 0) - (b['狀態'] === '已回報匯款' ? -1 : 0));
 
@@ -59,9 +59,9 @@
       const canPlace = ['已回報匯款', '待付款', '下單失敗'].includes(s);
       return `<tr>
         <td><b>${esc(o['訂單編號'])}</b><br><span class="hint">${esc(o['建立時間'])}</span></td>
-        <td>${esc(o['姓名'])}<br><span class="hint">${esc(o['聯絡方式'])}</span></td>
+        <td>${esc(o['姓名'])}<br><span class="hint">${esc([o['手機'], o['聯絡方式']].filter(Boolean).join(' / '))}</span></td>
         <td>${esc(o['商品名稱'])} × ${esc(o['數量'])}<br><a class="hint" href="${esc(o['連結'])}" target="_blank" rel="noopener noreferrer">${esc(String(o['連結']).slice(0, 40))}</a></td>
-        <td><b>${fmt(o['應付金額'])}</b></td>
+        <td><b>${fmt(o['應付金額'])}</b>${o['折扣說明'] ? `<br><span class="hint">${esc(o['折扣說明'])}</span>` : ''}</td>
         <td>${esc(o['匯款末五碼'])}<br><span class="hint">${esc(o['回報時間'])}</span></td>
         <td>${pill(s)}${o['剩餘'] !== '' ? `<br><span class="hint">剩餘 ${esc(o['剩餘'])}</span>` : ''}${o['備註'] ? `<br><span class="hint">${esc(o['備註'])}</span>` : ''}</td>
         <td>${esc(o['上游'])} ${esc(o['上游訂單號'])}<br>${o['利潤'] !== '' ? `<span class="hint">成本 ${fmt(o['成本TWD'])}・利潤 <b>${fmt(o['利潤'])}</b></span>` : ''}</td>

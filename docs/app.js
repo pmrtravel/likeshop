@@ -59,13 +59,41 @@
     const amount = Math.ceil(current.pricePer1000 * q / 1000);
     const okQty = q >= current.min && q <= current.max;
     $('total').textContent = okQty ? fmt(amount) : 'NT$ —';
+    $('discountHint').textContent = '';
     const underMin = okQty && amount < DATA.minOrder;
     $('minHint').textContent = underMin ? `最低訂單金額 NT$${DATA.minOrder}，請增加數量` : '';
     $('submitBtn').disabled = !(okQty && !underMin && $('agree').checked);
+    if (okQty && !underMin) scheduleQuote();
+  }
+
+  // 有填手機或優惠碼時，向後台查折扣後金額
+  let quoteTimer = null, quoteSeq = 0;
+  function scheduleQuote() { clearTimeout(quoteTimer); quoteTimer = setTimeout(quote, 400); }
+  async function quote() {
+    const phone = $('phone').value.trim(), coupon = $('coupon').value.trim();
+    if (!current || (!phone && !coupon)) return;
+    if (phone && !/^(09\d{8}|\+?8869\d{8})$/.test(phone.replace(/[\s-]/g, ''))) return;
+    const seq = ++quoteSeq;
+    try {
+      const r = await api('POST', { action: 'quote', productId: current.id, quantity: $('qty').value, phone, coupon });
+      if (seq !== quoteSeq) return;
+      if (!r.ok) { $('discountHint').className = 'hint msg err'; $('discountHint').textContent = r.error; return; }
+      const d = r.data;
+      $('discountHint').className = 'hint';
+      if (d.amount < d.base) {
+        $('total').innerHTML = `<s style="opacity:.5;font-weight:400;font-size:.8em">${fmt(d.base)}</s> ${fmt(d.amount)}`;
+        $('discountHint').textContent = `🎁 ${d.label}，省 ${d.base - d.amount} 元`;
+      } else if (phone && !coupon) {
+        $('discountHint').textContent = '💎 已記錄為會員，下次下單起享老客折扣';
+      }
+    } catch (e) { }
   }
 
   ['qty', 'agree'].forEach(id => $(id).addEventListener('input', calc));
   $('agree').addEventListener('change', calc);
+  $('phone').addEventListener('change', calc);
+  $('couponBtn').onclick = calc;
+  $('coupon').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); calc(); } });
 
   $('submitBtn').onclick = async () => {
     const btn = $('submitBtn'); btn.disabled = true; $('orderMsg').className = 'msg'; $('orderMsg').textContent = '送出中…';
@@ -73,6 +101,7 @@
       const r = await api('POST', {
         action: 'createOrder', productId: current.id, link: $('link').value.trim(),
         quantity: $('qty').value, name: $('name').value.trim(), contact: $('contact').value.trim(),
+        phone: $('phone').value.trim(), coupon: $('coupon').value.trim(),
       });
       if (!r.ok) throw new Error(r.error);
       showPay(r.data);
@@ -83,11 +112,15 @@
     $('orderBox').classList.add('hidden');
     $('payBox').classList.remove('hidden');
     $('payOid').textContent = d.orderId;
-    $('paySummary').innerHTML = `${d.productName} × ${Number(d.quantity).toLocaleString()}<br>請匯款 <b style="font-size:24px">${fmt(d.amount)}</b>${d.base && d.amount !== d.base ? `<br><span class="hint">🎁 已折抵 ${d.base - d.amount} 元（原價 ${fmt(d.base)}）</span>` : ''}`;
+    $('paySummary').innerHTML = `${d.productName} × ${Number(d.quantity).toLocaleString()}<br>請匯款 <b style="font-size:24px">${fmt(d.amount)}</b>${d.base && d.amount !== d.base ? `<br><span class="hint">🎁 ${d.discountLabel ? d.discountLabel + '，' : ''}已折抵 ${d.base - d.amount} 元（原價 ${fmt(d.base)}）</span>` : ''}`;
     $('bankInfo').textContent = d.bankInfo;
     $('payBox').dataset.oid = d.orderId;
     startCountdown(d.payWindowMin || 5);
-    try { localStorage.setItem('lastOrder', d.orderId); } catch (e) { }
+    try {
+      localStorage.setItem('lastOrder', d.orderId);
+      if ($('phone').value.trim()) localStorage.setItem('phone', $('phone').value.trim());
+      if ($('name').value.trim()) localStorage.setItem('name', $('name').value.trim());
+    } catch (e) { }
     $('payBox').scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -133,7 +166,11 @@
   };
 
   (async function init() {
-    try { const last = localStorage.getItem('lastOrder'); if (last) $('qid').value = last; } catch (e) { }
+    try {
+      const last = localStorage.getItem('lastOrder'); if (last) $('qid').value = last;
+      const ph = localStorage.getItem('phone'); if (ph) $('phone').value = ph;
+      const nm = localStorage.getItem('name'); if (nm) $('name').value = nm;
+    } catch (e) { }
     if (!window.API_URL || API_URL.indexOf('請換成') >= 0) { $('grid').innerHTML = '<div class="card hint">🔋 網站準備中，即將開放下單</div>'; return; }
     try {
       const r = await api('GET', { action: 'products' });

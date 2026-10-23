@@ -12,6 +12,7 @@ const SH = {
   SERVICES: '上游服務',
   ORDERS: '訂單',
   BANKLOG: '入帳紀錄',
+  COUPONS: '優惠碼',
 };
 
 const HEADERS = {
@@ -21,9 +22,15 @@ const HEADERS = {
   [SH.MAPPING]: ['商品ID', '上游', '服務ID', '加權', '單價每千', '幣別', '最少', '最多', '補單', '台幣成本每千', '更新時間', '服務名稱'],
   [SH.SERVICES]: ['上游', '服務ID', '名稱', '分類', '類型', '單價每千', '最少', '最多', '補單', '可取消'],
   [SH.ORDERS]: ['訂單編號', '建立時間', '姓名', '聯絡方式', '商品ID', '商品名稱', '連結', '數量', '應付金額',
-    '狀態', '匯款末五碼', '回報時間', '上游', '上游訂單號', '成本TWD', '利潤', '上游狀態', '剩餘', '備註', '更新時間'],
+    '狀態', '匯款末五碼', '回報時間', '上游', '上游訂單號', '成本TWD', '利潤', '上游狀態', '剩餘', '備註', '更新時間',
+    '手機', '優惠碼', '原價', '折扣說明'],
   [SH.BANKLOG]: ['收到時間', '通知內容', '金額', '對應訂單', '結果'],
+  [SH.COUPONS]: ['代碼', '折扣', '啟用', '到期日', '可用次數', '說明'],
 };
+
+const DEFAULT_COUPONS = [
+  ['WELCOME10', 0.10, true, '', '', '範例：新客 9 折（折扣 0.1 = 打 9 折；到期日、可用次數留空 = 不限）'],
+];
 
 const DEFAULT_SETTINGS = [
   ['SITE_NAME', '人氣充電站', '網站名稱'],
@@ -38,6 +45,7 @@ const DEFAULT_SETTINGS = [
   ['LINE_OA_URL', 'https://line.me/R/ti/p/@your-id', 'LINE 官方帳號連結'],
   ['NOTIFY_SECRET', Utilities.getUuid().slice(0, 12), '手機轉發入帳通知用的暗號（MacroDroid 要填一樣的）'],
   ['PAY_WINDOW_MIN', 5, '付款期限（分鐘），超過就標成已逾期'],
+  ['MEMBER_DISCOUNT', 0.05, '老客折扣：同一支手機之前有成功下單過，自動打折（0.05 = 95 折，0 = 關閉）'],
   ['AUTO_PLACE', true, '入帳金額對上唯一一筆訂單時，自動向上游下單（FALSE = 只標記已付款）'],
 ];
 
@@ -78,7 +86,17 @@ function setup() {
       sh.setFrozenRows(1);
       sh.getRange(1, 1, 1, HEADERS[name].length).setFontWeight('bold').setBackground('#eef2f7');
     }
+    // 舊版工作表：補上新增的欄位
+    const have = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), 1)).getValues()[0];
+    HEADERS[name].forEach(h => {
+      if (have.indexOf(h) < 0) { const c = sh.getLastColumn() + 1; sh.getRange(1, c).setValue(h).setFontWeight('bold').setBackground('#eef2f7'); }
+    });
   });
+  // 舊版設定表：補上新增的設定項目
+  const stHave = rows_(SH.SETTINGS).map(r => r['項目']);
+  DEFAULT_SETTINGS.filter(d => stHave.indexOf(d[0]) < 0).forEach(d => ss.getSheetByName(SH.SETTINGS).appendRow(d));
+  const cp = ss.getSheetByName(SH.COUPONS);
+  if (cp.getLastRow() === 1) cp.getRange(2, 1, DEFAULT_COUPONS.length, 6).setValues(DEFAULT_COUPONS);
   const st = ss.getSheetByName(SH.SETTINGS);
   if (st.getLastRow() === 1) st.getRange(2, 1, DEFAULT_SETTINGS.length, 3).setValues(DEFAULT_SETTINGS);
   const pr = ss.getSheetByName(SH.PRODUCTS);
@@ -134,6 +152,7 @@ function settings_() {
   s.USD_TWD = Number(s.USD_TWD) || 32;
   s.MIN_ORDER_TWD = Number(s.MIN_ORDER_TWD) || 0;
   s.NO_REFILL_PENALTY = Number(s.NO_REFILL_PENALTY) || 0;
+  s.MEMBER_DISCOUNT = Math.min(Math.max(Number(s.MEMBER_DISCOUNT) || 0, 0), 0.5);
   SETTINGS_CACHE = s;
   return s;
 }
@@ -293,9 +312,10 @@ function createOrder_(b) {
   }
   const name = String(b.name || '').trim().slice(0, 50);
   const contact = String(b.contact || '').trim().slice(0, 80);
-  if (!name || !contact) throw new Error('請填寫姓名與聯絡方式（LINE ID 或手機）');
-  const base = priceFor_(p, qty);
-  if (base < data.minOrder) throw new Error('最低訂單金額為 NT$' + data.minOrder + '，請增加數量');
+  const phone = normPhone_(b.phone);
+  if (!name || !(contact || phone)) throw new Error('請填寫姓名，以及手機或 LINE ID');
+  const q = quote_(p, qty, phone, b.coupon, data.minOrder);
+  const base = q.amount;
 
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -305,12 +325,88 @@ function createOrder_(b) {
   const vals = {
     '訂單編號': id, '建立時間': now_(), '姓名': name, '聯絡方式': contact, '商品ID': p.id, '商品名稱': p.name,
     '連結': link, '數量': qty, '應付金額': amount, '狀態': '待付款', '更新時間': now_(),
+    '手機': phone ? "'" + phone : '', '優惠碼': q.code, '原價': q.base, '折扣說明': q.label,
   };
   const row = HEADERS[SH.ORDERS].map(h => (h in vals ? vals[h] : ''));
   sheet_(SH.ORDERS).appendRow(row);
   notify_('新訂單 ' + id, name + ' / ' + contact + '\n' + p.name + ' x ' + qty + '\nNT$' + amount + '\n' + link);
-  return { orderId: id, amount: amount, base: base, payWindowMin: payWindowMin_(), bankInfo: settings_().BANK_INFO, productName: p.name, quantity: qty };
+  return { orderId: id, amount: amount, base: q.base, discountLabel: q.label, payWindowMin: payWindowMin_(), bankInfo: settings_().BANK_INFO, productName: p.name, quantity: qty };
   } finally { lock.releaseLock(); }
+}
+
+// ============ 會員與優惠碼 ============
+const PAID_STATES = ['已付款', '處理中', '已完成', '部分完成'];
+const DEAD_STATES = ['已逾期', '已取消', '已退款'];
+const inStates_ = (st, list) => list.some(x => String(st).indexOf(x) === 0); // 「已取消(需退款)」也算已取消
+const phoneKey_ = v => String(v).replace(/\D/g, '').slice(-9); // 不管有沒有被試算表吃掉開頭的 0
+
+/** 手機號碼統一成 09xxxxxxxx；空白回傳 ''，格式不對就報錯。 */
+function normPhone_(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.indexOf('886') === 0) d = '0' + d.slice(3);
+  if (!/^09\d{8}$/.test(d)) throw new Error('手機號碼格式不對，請填 09 開頭的 10 碼');
+  return d;
+}
+
+function isMember_(phone) {
+  if (!phone) return false;
+  return rows_(SH.ORDERS).some(o => phoneKey_(o['手機']) === phoneKey_(phone) && inStates_(o['狀態'], PAID_STATES));
+}
+
+/** 查優惠碼，不能用就報錯（說明原因）。 */
+function findCoupon_(code) {
+  const sh = sheet_(SH.COUPONS);
+  if (!sh) throw new Error('優惠碼無效');
+  const c = rows_(SH.COUPONS).find(r => String(r['代碼']).trim().toUpperCase() === code);
+  if (!c || !truthy_(c['啟用'])) throw new Error('優惠碼無效');
+  const pct = Number(c['折扣']) || 0;
+  if (!(pct > 0 && pct < 1)) throw new Error('優惠碼無效');
+  if (c['到期日']) {
+    const end = new Date(c['到期日']); end.setHours(23, 59, 59);
+    if (Date.now() > end.getTime()) throw new Error('優惠碼已過期');
+  }
+  const limit = Number(c['可用次數']) || 0;
+  if (limit > 0) {
+    const used = rows_(SH.ORDERS).filter(o => String(o['優惠碼']).toUpperCase() === code && !inStates_(o['狀態'], DEAD_STATES)).length;
+    if (used >= limit) throw new Error('優惠碼已被用完');
+  }
+  return { code: code, pct: pct };
+}
+
+/**
+ * 計算折扣後金額。老客折扣與優惠碼取比較划算的一個（不疊加）。
+ * 折完不會低於上游成本 ×1.1，避免賠錢。
+ */
+function quote_(p, qty, phone, couponRaw, minOrder) {
+  const base = priceFor_(p, qty);
+  if (base < minOrder) throw new Error('最低訂單金額為 NT$' + minOrder + '，請增加數量');
+  const opts = [];
+  const md = settings_().MEMBER_DISCOUNT;
+  if (md > 0 && isMember_(phone)) opts.push({ pct: md, label: '老客 ' + pctLabel_(md), code: '' });
+  const code = String(couponRaw || '').trim().toUpperCase();
+  if (code) { const c = findCoupon_(code); opts.push({ pct: c.pct, label: '優惠碼 ' + code + ' ' + pctLabel_(c.pct), code: code }); }
+  const best = opts.sort((a, b) => b.pct - a.pct)[0];
+  if (!best) return { base: base, amount: base, label: '', code: '', member: false };
+  const r = rankedMappings_(p.id, qty)[0];
+  const floor = r ? Math.ceil(r.cost * qty / 1000 * 1.1) : base;
+  const amount = Math.max(Math.round(base * (1 - best.pct)), floor, 1);
+  return { base: base, amount: Math.min(amount, base), label: best.label, code: best.code, member: best.code === '' };
+}
+
+/** 0.1 → 「9 折」、0.05 → 「95 折」 */
+function pctLabel_(pct) {
+  const n = Math.round((1 - pct) * 100);
+  return (n % 10 === 0 ? n / 10 : n) + ' 折';
+}
+
+function publicQuote_(b) {
+  const data = productList_();
+  const p = data.products.find(x => x.id === b.productId);
+  if (!p) throw new Error('此服務目前無法下單');
+  const qty = Math.floor(Number(b.quantity));
+  if (!(qty >= p.min && qty <= p.max)) throw new Error('數量需介於 ' + p.min + ' ~ ' + p.max);
+  return quote_(p, qty, normPhone_(b.phone), b.coupon, data.minOrder);
 }
 
 // ============ 自動對帳 ============
@@ -544,6 +640,7 @@ function doPost(e) {
   try {
     switch (b.action) {
       case 'createOrder': return json_({ ok: true, data: createOrder_(b) });
+      case 'quote': return json_({ ok: true, data: publicQuote_(b) });
       case 'reportPayment': return json_({ ok: true, data: reportPayment_(b) });
       case 'bankNotify': return json_({ ok: true, data: bankNotify_(b) });
     }
