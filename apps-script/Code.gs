@@ -552,7 +552,7 @@ function placeOrder_(orderId, opt) {
     const o = findOrder_(orderId);
     if (!o) throw new Error('查無此訂單');
     if (!opt.reorder && ['待付款', '已回報匯款', '已付款', '已逾期', '下單失敗'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，不能重複下單');
-    const qty = Number(o['數量']);
+    const qty = opt.qty || Number(o['數量']);
     const tried = triedList_(o);
     const ranked = rankedMappings_(o['商品ID'], qty).filter(r => tried.indexOf(svcKey_(r.m)) < 0);
     if (!ranked.length) throw new Error(tried.length ? '備援服務都試過了' : '沒有上游支援此商品與數量，請檢查「對應」表');
@@ -644,6 +644,14 @@ function afterStatus_(o, p) {
   }
   if (String(o['狀態']).indexOf('部分完成') === 0) {
     const rem = Number(o['剩餘']) || 0;
+    // 是我們因為卡單申請取消的 → 剩下的數量改用備援補送，而不是直接退款
+    if (rem > 0 && String(o['備註']).indexOf('卡單#' + o['上游訂單號']) >= 0) {
+      try {
+        const r = placeOrder_(o['訂單編號'], { reorder: true, noLock: true, qty: Math.min(rem, qty), note: '上游 ' + o['上游訂單號'] + ' 卡單只送了 ' + Math.max(qty - rem, 0) + '，剩 ' + rem + ' 改用備援補送' });
+        notify_('訂單 ' + o['訂單編號'] + ' 已改用備援補送', '剩 ' + rem + ' 改下 ' + r.provider + ' #' + r.providerOrder);
+        return;
+      } catch (e) { /* 沒有備援 → 照常退差額 */ }
+    }
     const refund = qty > 0 ? Math.floor(paid * rem / qty) : 0;
     if (refund > 0 && !o['退款狀態']) {
       setCells_(SH.ORDERS, o._row, { '應退金額': refund, '退款狀態': '待客人提供帳戶' });
