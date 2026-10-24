@@ -23,7 +23,7 @@ const HEADERS = {
   [SH.SERVICES]: ['上游', '服務ID', '名稱', '分類', '類型', '單價每千', '最少', '最多', '補單', '可取消'],
   [SH.ORDERS]: ['訂單編號', '建立時間', '姓名', '聯絡方式', '商品ID', '商品名稱', '連結', '數量', '應付金額',
     '狀態', '匯款末五碼', '回報時間', '上游', '上游訂單號', '成本TWD', '利潤', '上游狀態', '剩餘', '備註', '更新時間',
-    '手機', '優惠碼', '原價', '折扣說明'],
+    '手機', '優惠碼', '原價', '折扣說明', '已試服務', '上游下單時間', '應退金額', '退款資訊', '退款狀態'],
   [SH.BANKLOG]: ['收到時間', '通知內容', '金額', '對應訂單', '結果'],
   [SH.COUPONS]: ['代碼', '折扣', '啟用', '到期日', '可用次數', '說明'],
 };
@@ -46,6 +46,7 @@ const DEFAULT_SETTINGS = [
   ['NOTIFY_SECRET', Utilities.getUuid().slice(0, 12), '手機轉發入帳通知用的暗號（MacroDroid 要填一樣的）'],
   ['PAY_WINDOW_MIN', 5, '付款期限（分鐘），超過就標成已逾期'],
   ['MEMBER_DISCOUNT', 0.05, '老客折扣：同一支手機之前有成功下單過，自動打折（0.05 = 95 折，0 = 關閉）'],
+  ['STUCK_HOURS', 6, '上游下單後超過幾小時還沒開始，就自動取消並改用備援服務（0 = 不自動處理）'],
   ['AUTO_PLACE', true, '入帳金額對上唯一一筆訂單時，自動向上游下單（FALSE = 只標記已付款）'],
 ];
 
@@ -54,6 +55,8 @@ const DEFAULT_PRODUCTS = [
   ['IG_LIKE', 'Instagram', 'IG 貼文按讚（30 天補單）', '貼上公開貼文網址', 50, 20000, true, 1, 120],
   ['IG_FOLLOW', 'Instagram', 'IG 粉絲（30 天補單）', '貼上個人頁網址，帳號需公開。30 天內掉量可補回', 100, 10000, true, 2, 220],
   ['IG_FOLLOW_ECO', 'Instagram', 'IG 粉絲・經濟款（不補單）', '價格最低，但掉量較多且不補單。帳號需公開', 100, 20000, true, 3, 90],
+  ['THREADS_FOLLOW', 'Threads', 'Threads 粉絲（30 天補單）', '貼上個人頁網址（threads.com/@帳號），帳號需公開', 50, 20000, true, 3.1, 390],
+  ['THREADS_LIKE', 'Threads', 'Threads 貼文按讚（30 天補單）', '貼上公開貼文網址', 50, 20000, true, 3.2, 190],
   ['FB_LIKE', 'Facebook', 'FB 貼文按讚（30 天補單）', '貼上公開貼文網址', 100, 20000, true, 4, 28],
   ['FB_FOLLOW', 'Facebook', 'FB 粉專追蹤（90 天補單）', '貼上粉絲專頁網址', 100, 20000, true, 5, 38],
 ];
@@ -62,7 +65,9 @@ const DEFAULT_PRODUCTS = [
 const DEFAULT_MAPPING = [
   ['IG_LIKE', 'JAP', 10065, 0], ['IG_LIKE', 'JAP', 10126, 0],
   ['IG_FOLLOW', 'JAP', 10242, 0], ['IG_FOLLOW', 'JAP', 10216, 0],
-  ['IG_FOLLOW_ECO', 'JAP', 10350, 0],
+  ['IG_FOLLOW_ECO', 'JAP', 5563, 0], ['IG_FOLLOW_ECO', 'JAP', 2012, 0], ['IG_FOLLOW_ECO', 'JAP', 7236, 0], // 10350 於 2026/10 卡單，已停用
+  ['THREADS_FOLLOW', 'JAP', 2119, 0], ['THREADS_FOLLOW', 'JAP', 322, 0.3],
+  ['THREADS_LIKE', 'JAP', 5026, 0],
   ['FB_LIKE', 'JAP', 9541, 0], ['FB_LIKE', 'JAP', 4351, 0],
   ['FB_FOLLOW', 'JAP', 7566, 0], ['FB_FOLLOW', 'JAP', 9548, 0],
 ];
@@ -530,21 +535,27 @@ function publicOrder_(o) {
   return {
     orderId: o['訂單編號'], created: o['建立時間'], productName: o['商品名稱'], quantity: o['數量'],
     amount: o['應付金額'], status: o['狀態'], remains: o['剩餘'],
+    refund: Number(o['應退金額']) || 0, refundStatus: o['退款狀態'] || '',
     bankInfo: o['狀態'] === '待付款' ? settings_().BANK_INFO : '',
   };
 }
 
 // ============ 後台：已繳費請下單 ============
-function placeOrder_(orderId) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+function svcKey_(m) { return m['上游'] + ':' + m['服務ID']; }
+function triedList_(o) { return String(o['已試服務'] || '').split(',').map(x => x.trim()).filter(Boolean); }
+
+function placeOrder_(orderId, opt) {
+  opt = opt || {};
+  const lock = opt.noLock ? null : LockService.getScriptLock();
+  if (lock) lock.waitLock(20000);
   try {
     const o = findOrder_(orderId);
     if (!o) throw new Error('查無此訂單');
-    if (['待付款', '已回報匯款', '已付款', '已逾期', '下單失敗'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，不能重複下單');
+    if (!opt.reorder && ['待付款', '已回報匯款', '已付款', '已逾期', '下單失敗'].indexOf(o['狀態']) < 0) throw new Error('此訂單狀態為「' + o['狀態'] + '」，不能重複下單');
     const qty = Number(o['數量']);
-    const ranked = rankedMappings_(o['商品ID'], qty);
-    if (!ranked.length) throw new Error('沒有上游支援此商品與數量，請檢查「對應」表');
+    const tried = triedList_(o);
+    const ranked = rankedMappings_(o['商品ID'], qty).filter(r => tried.indexOf(svcKey_(r.m)) < 0);
+    if (!ranked.length) throw new Error(tried.length ? '備援服務都試過了' : '沒有上游支援此商品與數量，請檢查「對應」表');
     const provs = providers_();
     const errs = [];
     for (const r of ranked) {
@@ -556,14 +567,17 @@ function placeOrder_(orderId) {
         setCells_(SH.ORDERS, o._row, {
           '狀態': '處理中', '上游': p['名稱'], '上游訂單號': String(res.order), '成本TWD': cost,
           '利潤': Math.round((Number(o['應付金額']) - cost) * 100) / 100,
-          '備註': [o['備註'], errs.length ? '改用備援：' + errs.join('；') : ''].filter(Boolean).join('；'), '更新時間': now_(),
+          '上游狀態': '', '剩餘': '', '上游下單時間': now_(),
+          '已試服務': tried.concat([svcKey_(r.m)]).join(','),
+          '備註': [o['備註'], opt.note || '', errs.length ? '改用備援：' + errs.join('；') : ''].filter(Boolean).join('；'), '更新時間': now_(),
         });
         return { ok: true, provider: p['名稱'], providerOrder: res.order, cost: cost };
       } catch (e) { errs.push(p['名稱'] + ' ' + e.message); }
     }
+    if (opt.reorder) throw new Error('備援下單失敗：' + errs.join('；'));
     setCells_(SH.ORDERS, o._row, { '狀態': '下單失敗', '備註': errs.join('；'), '更新時間': now_() });
     throw new Error('所有上游都下單失敗：' + errs.join('；'));
-  } finally { lock.releaseLock(); }
+  } finally { if (lock) lock.releaseLock(); }
 }
 
 const STATUS_MAP = {
@@ -592,7 +606,8 @@ function syncStatuses() {
         const st = res[o['上游訂單號']] || (chunk.length === 1 ? res : null);
         if (!st || st.error) return;
         const raw = String(st.status || '');
-        const patch = { '上游狀態': raw, '剩餘': (st.remains === undefined || st.remains === null) ? '' : st.remains, '更新時間': now_() };
+        const remains = (st.remains === undefined || st.remains === null) ? '' : Number(st.remains);
+        const patch = { '上游狀態': raw, '剩餘': remains, '更新時間': now_() };
         patch['狀態'] = STATUS_MAP[raw.toLowerCase()] || '處理中';
         if (st.charge !== undefined && st.charge !== '') {
           const cost = Math.round(toTwd_(st.charge, st.currency || p['幣別']) * 100) / 100;
@@ -601,10 +616,76 @@ function syncStatuses() {
         }
         setCells_(SH.ORDERS, o._row, patch);
         updated++;
+        try { afterStatus_(Object.assign({}, o, patch), p); } catch (e) { }
       });
     }
   });
   return { checked: active.length, updated: updated };
+}
+
+/**
+ * 狀態更新後的自動處理：
+ * - 上游取消 → 還有備援服務就自動改下，沒有就標成需退款
+ * - 部分完成 → 算出要退的差額
+ * - 卡單（超過 STUCK_HOURS 小時一個都沒送）→ 向上游申請取消，取消後會自動改用備援
+ */
+function afterStatus_(o, p) {
+  const qty = Number(o['數量']), paid = Number(o['應付金額']);
+  if (String(o['狀態']).indexOf('已取消') === 0) {
+    try {
+      const r = placeOrder_(o['訂單編號'], { reorder: true, noLock: true, note: '上游訂單 ' + o['上游訂單號'] + ' 被取消，自動改用備援' });
+      notify_('訂單 ' + o['訂單編號'] + ' 已自動改用備援', '原上游訂單 ' + o['上游訂單號'] + ' 被取消，已改下 ' + r.provider + ' #' + r.providerOrder);
+      return;
+    } catch (e) {
+      setCells_(SH.ORDERS, o._row, { '應退金額': paid, '退款狀態': '待客人提供帳戶' });
+      notify_('訂單 ' + o['訂單編號'] + ' 需要退款 NT$' + paid, '上游取消且沒有可用的備援（' + e.message + '）。客人可在網站查詢訂單時填寫退款帳戶。');
+      return;
+    }
+  }
+  if (String(o['狀態']).indexOf('部分完成') === 0) {
+    const rem = Number(o['剩餘']) || 0;
+    const refund = qty > 0 ? Math.floor(paid * rem / qty) : 0;
+    if (refund > 0 && !o['退款狀態']) {
+      setCells_(SH.ORDERS, o._row, { '應退金額': refund, '退款狀態': '待客人提供帳戶' });
+      notify_('訂單 ' + o['訂單編號'] + ' 部分完成，需退 NT$' + refund, '少送 ' + rem + ' / ' + qty + '。客人可在網站查詢訂單時填寫退款帳戶。');
+    } else if (refund <= 0) {
+      setCells_(SH.ORDERS, o._row, { '狀態': '已完成' });
+    }
+    return;
+  }
+  // 卡單偵測
+  const hours = Number(settings_().STUCK_HOURS) || 0;
+  if (!hours || o['狀態'] !== '處理中' || String(o['備註']).indexOf('卡單#' + o['上游訂單號']) >= 0) return;
+  const since = o['上游下單時間'] ? toDate_(o['上游下單時間']) : toDate_(o['建立時間']);
+  const noProgress = o['剩餘'] === '' || Number(o['剩餘']) >= qty;
+  if (!noProgress || Date.now() - since.getTime() < hours * 3600 * 1000) return;
+  let res = {};
+  try { res = callProvider_(p, { action: 'cancel', orders: String(o['上游訂單號']) }); } catch (e) { res = { error: e.message }; }
+  const r0 = Array.isArray(res) ? res[0] || {} : res;
+  const ok = !(r0.error || (r0.cancel && r0.cancel.error));
+  setCells_(SH.ORDERS, o._row, { '備註': [o['備註'], '卡單#' + o['上游訂單號'] + ' 超過 ' + hours + ' 小時：' + (ok ? '已向上游申請取消，取消後自動改用備援' : '申請取消失敗，請人工處理')].filter(Boolean).join('；') });
+  notify_('訂單 ' + o['訂單編號'] + ' 卡單', '上游 ' + o['上游訂單號'] + ' 超過 ' + hours + ' 小時沒有進度。' + (ok ? '已自動申請取消。' : '自動取消失敗，請到上游後台處理。'));
+}
+
+// ============ 退款 ============
+/** 客人在查詢頁填退款帳戶：要對上訂單上的手機或姓名，避免別人亂填。 */
+function refundInfo_(b) {
+  const o = findOrder_(String(b.orderId || '').trim().toUpperCase());
+  if (!o) throw new Error('查無此訂單');
+  if (!(Number(o['應退金額']) > 0) || o['退款狀態'] === '已退款') throw new Error('這筆訂單目前沒有需要退款的金額');
+  const who = String(b.verify || '').trim();
+  const phoneOk = o['手機'] && who.replace(/\D/g, '').length >= 9 && phoneKey_(who) === phoneKey_(o['手機']);
+  const nameOk = who && who === String(o['姓名']).trim();
+  if (!phoneOk && !nameOk) throw new Error('驗證失敗：請輸入下單時填的手機或姓名');
+  const bank = String(b.bank || '').replace(/\D/g, '');
+  const acct = String(b.account || '').replace(/[\s-]/g, '');
+  const name = String(b.holder || '').trim().slice(0, 30);
+  if (!/^\d{3}$/.test(bank)) throw new Error('銀行代碼是 3 碼數字，例如 822');
+  if (!/^\d{6,16}$/.test(acct)) throw new Error('帳號格式不對');
+  if (!name) throw new Error('請填戶名');
+  setCells_(SH.ORDERS, o._row, { '退款資訊': "'" + bank + ' / ' + acct + ' / ' + name, '退款狀態': '待退款', '更新時間': now_() });
+  notify_('客人已填退款帳戶 ' + o['訂單編號'], '應退 NT$' + o['應退金額'] + '\n' + bank + ' / ' + acct + ' / ' + name);
+  return { refund: Number(o['應退金額']) };
 }
 
 function balances_() {
@@ -648,6 +729,7 @@ function doPost(e) {
     switch (b.action) {
       case 'createOrder': return json_({ ok: true, data: createOrder_(b) });
       case 'quote': return json_({ ok: true, data: publicQuote_(b) });
+      case 'refundInfo': return json_({ ok: true, data: refundInfo_(b) });
       case 'reportPayment': return json_({ ok: true, data: reportPayment_(b) });
       case 'bankNotify': return json_({ ok: true, data: bankNotify_(b) });
     }
@@ -664,6 +746,12 @@ function doPost(e) {
         const o = findOrder_(String(b.orderId));
         if (!o) throw new Error('查無此訂單');
         setCells_(SH.ORDERS, o._row, { '狀態': String(b.status), '更新時間': now_() });
+        return json_({ ok: true, data: {} });
+      }
+      case 'markRefunded': {
+        const o = findOrder_(String(b.orderId));
+        if (!o) throw new Error('查無此訂單');
+        setCells_(SH.ORDERS, o._row, { '退款狀態': '已退款', '更新時間': now_() });
         return json_({ ok: true, data: {} });
       }
       case 'refreshPrices': return json_({ ok: true, data: refreshPrices() });

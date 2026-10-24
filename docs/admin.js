@@ -63,17 +63,22 @@
         <td>${esc(o['商品名稱'])} × ${esc(o['數量'])}<br><a class="hint" href="${esc(o['連結'])}" target="_blank" rel="noopener noreferrer">${esc(String(o['連結']).slice(0, 40))}</a></td>
         <td><b>${fmt(o['應付金額'])}</b>${o['折扣說明'] ? `<br><span class="hint">${esc(o['折扣說明'])}</span>` : ''}</td>
         <td>${esc(o['匯款末五碼'])}<br><span class="hint">${esc(o['回報時間'])}</span></td>
-        <td>${pill(s)}${o['剩餘'] !== '' ? `<br><span class="hint">剩餘 ${esc(o['剩餘'])}</span>` : ''}${o['備註'] ? `<br><span class="hint">${esc(o['備註'])}</span>` : ''}</td>
+        <td>${pill(s)}${o['剩餘'] !== '' ? `<br><span class="hint">剩餘 ${esc(o['剩餘'])}</span>` : ''}${o['備註'] ? `<br><span class="hint">${esc(o['備註'])}</span>` : ''}${Number(o['應退金額']) > 0 ? `<br><b>💸 應退 ${fmt(o['應退金額'])}・${esc(o['退款狀態'])}</b>${o['退款資訊'] ? `<br><span class="hint">${esc(o['退款資訊'])}</span>` : ''}` : ''}</td>
         <td>${esc(o['上游'])} ${esc(o['上游訂單號'])}<br>${o['利潤'] !== '' ? `<span class="hint">成本 ${fmt(o['成本TWD'])}・利潤 <b>${fmt(o['利潤'])}</b></span>` : ''}</td>
         <td>
           ${canPlace ? `<button class="sbtn go" data-place="${esc(o['訂單編號'])}">已繳費請下單</button><br>` : ''}
           ${s === '待付款' || s === '已回報匯款' ? `<button class="sbtn" data-st="${esc(o['訂單編號'])}" data-v="已取消">取消</button>` : ''}
-          ${/需退/.test(s) ? `<button class="sbtn" data-st="${esc(o['訂單編號'])}" data-v="已退款">標記已退款</button>` : ''}
+          ${(/需退/.test(s) || Number(o['應退金額']) > 0) && o['退款狀態'] !== '已退款' ? `<button class="sbtn" data-refunded="${esc(o['訂單編號'])}">標記已退款</button>` : ''}
         </td></tr>`;
     }).join('') || '<tr><td colspan="8" class="hint">沒有訂單</td></tr>';
 
     $('tbody').querySelectorAll('[data-place]').forEach(b => b.onclick = () => place(b.dataset.place, b));
     $('tbody').querySelectorAll('[data-st]').forEach(b => b.onclick = () => setStatus(b.dataset.st, b.dataset.v));
+    $('tbody').querySelectorAll('[data-refunded]').forEach(b => b.onclick = async () => {
+      if (!confirm('確定已經把錢轉給客人了？')) return;
+      b.disabled = true;
+      try { await post('markRefunded', { orderId: b.dataset.refunded }); load(); } catch (e) { alert(e.message); b.disabled = false; }
+    });
   }
 
   async function place(id, btn) {

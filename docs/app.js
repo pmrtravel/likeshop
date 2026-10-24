@@ -13,7 +13,8 @@
   }
 
   const fmt = n => 'NT$ ' + Number(n).toLocaleString('zh-TW');
-  const STATUS_LABEL = { '待付款': '待付款', '已回報匯款': '確認款項中', '已付款': '✅ 已收款，準備充電', '處理中': '🔋 充電中', '已完成': '⚡ 已充滿', '已逾期': '已逾期（未收到款項）' };
+  const STATUS_LABEL = { '待付款': '待付款', '已回報匯款': '確認款項中', '已付款': '✅ 已收款，準備充電', '處理中': '🔋 充電中', '已完成': '⚡ 已充滿', '已逾期': '已逾期（未收到款項）',
+    '已取消(需退款)': '未能完成，將全額退款', '部分完成(需退差額)': '部分完成，將退還差額' };
   const statusText = s => STATUS_LABEL[s] || s;
 
   function renderTabs() {
@@ -43,7 +44,7 @@
     $('payBox').classList.add('hidden');
     $('formTitle').textContent = current.name;
     $('formDesc').textContent = current.desc || '';
-    $('link').placeholder = current.platform === 'Facebook' ? 'https://www.facebook.com/...' : 'https://www.instagram.com/...';
+    $('link').placeholder = { Facebook: 'https://www.facebook.com/...', Threads: 'https://www.threads.com/@...' }[current.platform] || 'https://www.instagram.com/...';
     $('qty').min = current.min; $('qty').max = current.max;
     $('qtyRange').textContent = `（${current.min.toLocaleString()} ~ ${current.max.toLocaleString()}）`;
     const suggested = Math.max(current.min, Math.ceil(DATA.minOrder / current.pricePer1000 * 1000 / 50) * 50);
@@ -159,11 +160,41 @@
       $('queryResult').innerHTML = `
         <p>狀態：<span class="status">${statusText(o.status)}</span>${o.remains !== '' && o.remains !== undefined && o.status !== '已完成' ? `（剩餘 ${o.remains}）` : ''}</p>
         <p class="hint">${o.productName} × ${o.quantity}・${fmt(o.amount)}・${o.created}</p>
-        ${o.status === '待付款' ? `<button class="btn ghost" id="toPay">回報匯款</button>` : ''}`;
+        ${o.status === '待付款' ? `<button class="btn ghost" id="toPay">回報匯款</button>` : ''}
+        ${refundBlock(o)}`;
+      bindRefund(o);
       const tp = $('toPay');
       if (tp) tp.onclick = () => { $('payBox').dataset.oid = o.orderId; $('payOid').textContent = o.orderId; $('paySummary').innerHTML = `請匯款 <b>${fmt(o.amount)}</b>`; $('bankInfo').textContent = o.bankInfo; $('payBox').classList.remove('hidden'); $('payBox').scrollIntoView({ behavior: 'smooth' }); };
     } catch (e) { $('queryMsg').className = 'msg err'; $('queryMsg').textContent = e.message; }
   };
+
+  function refundBlock(o) {
+    if (!(o.refund > 0)) return '';
+    if (o.refundStatus === '已退款') return `<p class="msg ok">✅ 已退款 ${fmt(o.refund)}，請查看你的帳戶。</p>`;
+    if (o.refundStatus === '待退款') return `<p class="msg ok">已收到退款帳戶，我們會盡快退還 ${fmt(o.refund)}（通常 1–2 個工作天）。</p>`;
+    return `<div class="card" style="margin-top:10px">
+      <b>💸 應退金額 ${fmt(o.refund)}</b>
+      <p class="hint">請填寫退款帳戶，我們會轉帳退還。</p>
+      <label for="rfVerify">驗證身分：下單時填的手機或姓名</label><input id="rfVerify">
+      <div class="row2">
+        <div><label for="rfBank">銀行代碼（3 碼）</label><input id="rfBank" inputmode="numeric" maxlength="3" placeholder="822"></div>
+        <div><label for="rfAcct">帳號</label><input id="rfAcct" inputmode="numeric"></div>
+      </div>
+      <label for="rfHolder">戶名</label><input id="rfHolder">
+      <button class="btn" id="rfBtn">送出退款帳戶</button>
+      <div class="msg" id="rfMsg"></div></div>`;
+  }
+  function bindRefund(o) {
+    const b = $('rfBtn'); if (!b) return;
+    b.onclick = async () => {
+      b.disabled = true; $('rfMsg').className = 'msg'; $('rfMsg').textContent = '送出中…';
+      try {
+        const r = await api('POST', { action: 'refundInfo', orderId: o.orderId, verify: $('rfVerify').value, bank: $('rfBank').value, account: $('rfAcct').value, holder: $('rfHolder').value });
+        if (!r.ok) throw new Error(r.error);
+        $('rfMsg').className = 'msg ok'; $('rfMsg').textContent = `已收到！我們會盡快退還 ${fmt(r.data.refund)}。`;
+      } catch (e) { $('rfMsg').className = 'msg err'; $('rfMsg').textContent = e.message; b.disabled = false; }
+    };
+  }
 
   (async function init() {
     try {
